@@ -2,13 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from __future__ import with_statement
+from __future__ import print_function
 
 import collections
 import errno
 import filecmp
 import os.path
 import re
+import subprocess
 import tempfile
 import sys
 
@@ -604,3 +605,18 @@ def CrossCompileRequested():
           os.environ.get('AR_target') or
           os.environ.get('CC_target') or
           os.environ.get('CXX_target'))
+
+
+def GetStdout(cmdlist, with_stderr=False):
+  """
+  Returns the content of standard output returned by invoking |cmdlist|.
+  Raises |GypError| if the command return with a non-zero return code.
+  """
+  job = subprocess.Popen(cmdlist, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  out, err = job.communicate()
+  if job.returncode != 0:
+    if with_stderr:
+      print(out, file=sys.stderr)
+      print(err, file=sys.stderr)
+    raise GypError('Error %d running %s' % (job.returncode, cmdlist[0]))
+  return out.rstrip('\n')
