@@ -204,8 +204,7 @@ class XcodeSettings(object):
     for configname, config in configs.items():
       self.xcode_settings[configname] = config.get('xcode_settings', {})
       self._ConvertConditionalKeys(configname)
-      if self.xcode_settings[configname].get('IPHONEOS_DEPLOYMENT_TARGET',
-                                             None):
+      if self.xcode_settings[configname].get('IPHONEOS_DEPLOYMENT_TARGET', None):
         self.isIOS = True
 
     # This is only non-None temporarily during the execution of some methods.
@@ -373,8 +372,7 @@ class XcodeSettings(object):
     if self.spec['type'] == 'shared_library':
       return self.GetBundleResourceFolder()
     else:
-      return os.path.join(self.GetBundleContentsFolderPath(),
-                          'SharedSupport')
+      return os.path.join(self.GetBundleContentsFolderPath(), 'SharedSupport')
 
   def GetBundlePlugInsFolderPath(self):
     """Returns the qualified path to the bundle's plugins folder. E.g,
@@ -392,12 +390,10 @@ class XcodeSettings(object):
     """Returns the qualified path to the bundle's plist file. E.g.
     Chromium.app/Contents/Info.plist. Only valid for bundles."""
     assert self._IsBundle()
-    if self.spec['type'] in ('executable', 'loadable_module') or \
-        self.IsIosFramework():
+    if self.spec['type'] in ('executable', 'loadable_module') or self.IsIosFramework():
       return os.path.join(self.GetBundleContentsFolderPath(), 'Info.plist')
     else:
-      return os.path.join(self.GetBundleContentsFolderPath(),
-                          'Resources', 'Info.plist')
+      return os.path.join(self.GetBundleContentsFolderPath(), 'Resources', 'Info.plist')
 
   def GetProductType(self):
     """Returns the PRODUCT_TYPE of this target."""
@@ -754,9 +750,8 @@ class XcodeSettings(object):
     if (self.spec['type'] != 'shared_library' and
         (self.spec['type'] != 'loadable_module' or self._IsBundle())):
       return None
-    install_base = self.GetPerTargetSetting(
-      'DYLIB_INSTALL_NAME_BASE',
-      default='/Library/Frameworks' if self._IsBundle() else '/usr/local/lib')
+    lib_path = '/Library/Frameworks' if self._IsBundle() else '/usr/local/lib'
+    install_base = self.GetPerTargetSetting('DYLIB_INSTALL_NAME_BASE', default=lib_path)
     return install_base
 
   def GetInstallName(self):
@@ -993,8 +988,7 @@ class XcodeSettings(object):
     self.configname = None
     return result
 
-  def _GetTargetPostbuilds(self, configname, output, output_binary,
-                           quiet=False):
+  def _GetTargetPostbuilds(self, configname, output, output_binary, quiet=False):
     """Returns a list of shell commands that contain the shell commands
     to run as postbuilds for this target, before the actual postbuilds."""
     # dSYMs need to build before stripping happens.
@@ -1039,9 +1033,10 @@ class XcodeSettings(object):
       test_host = os.path.dirname(settings.get('TEST_HOST'))
       frameworks_dir = os.path.join(test_host, 'Frameworks')
       platform_root = self._XcodePlatformPath(configname)
-      frameworks = \
-        ['Developer/Library/PrivateFrameworks/IDEBundleInjection.framework',
-         'Developer/Library/Frameworks/XCTest.framework']
+      frameworks = [
+        'Developer/Library/PrivateFrameworks/IDEBundleInjection.framework',
+        'Developer/Library/Frameworks/XCTest.framework'
+      ]
       for framework in frameworks:
         source = os.path.join(platform_root, framework)
         destination = os.path.join(frameworks_dir, os.path.basename(framework))
@@ -1254,7 +1249,9 @@ class MacPrefixHeader(object):
       ext = os.path.splitext(source)[1]
       lang = {
         '.c': 'c',
-        '.cpp': 'cc', '.cc': 'cc', '.cxx': 'cc',
+        '.cpp': 'cc',
+        '.cc': 'cc',
+        '.cxx': 'cc',
         '.m': 'm',
         '.mm': 'mm',
       }.get(ext, None)
@@ -1298,9 +1295,11 @@ def IsMacBundle(flavor, spec):
   Bundles are directories with a certain subdirectory structure, instead of
   just a single file. Bundle rules do not produce a binary but also package
   resources into that directory."""
-  is_mac_bundle = int(spec.get('mac_xctest_bundle', 0)) != 0 or \
-                  int(spec.get('mac_xcuitest_bundle', 0)) != 0 or \
-                  (int(spec.get('mac_bundle', 0)) != 0 and flavor == 'mac')
+  is_mac_bundle = (
+      int(spec.get('mac_xctest_bundle', 0)) != 0 or
+      int(spec.get('mac_xcuitest_bundle', 0)) != 0 or
+      (int(spec.get('mac_bundle', 0)) != 0 and flavor == 'mac')
+  )
 
   if is_mac_bundle:
     assert spec['type'] != 'none', 'mac_bundle targets cannot have type none (target "%s")' % spec['target_name']
@@ -1312,8 +1311,7 @@ def GetMacBundleResources(product_dir, xcode_settings, resources):
   Only call this for mac bundle targets.
 
   Args:
-      product_dir: Path to the directory containing the output bundle,
-          relative to the build directory.
+      product_dir: Path to the directory containing the output bundle, relative to the build directory.
       xcode_settings: The XcodeSettings of the current target.
       resources: A list of bundle resources, relative to the build directory.
   """
@@ -1481,21 +1479,22 @@ def _GetXcodeEnv(xcode_settings, built_products_dir, srcroot, configuration, add
   return additional_settings
 
 
-def _NormalizeEnvVarReferences(str):
-  """Takes a string containing variable references in the form ${FOO}, $(FOO),
-  or $FOO, and returns a string with all variable references in the form ${FOO}.
+def _NormalizeEnvVarReferences(string_arg):
+  """
+  Takes a string containing variable references in the form ${FOO}, $(FOO), or $FOO,
+  and returns a string with all variable references in the form ${FOO}.
   """
   # $FOO -> ${FOO}
-  str = re.sub(r'\$([a-zA-Z_][a-zA-Z0-9_]*)', r'${\1}', str)
+  string_arg = re.sub(r'\$([a-zA-Z_][a-zA-Z0-9_]*)', r'${\1}', string_arg)
 
   # $(FOO) -> ${FOO}
-  matches = re.findall(r'(\$\(([a-zA-Z0-9\-_]+)\))', str)
+  matches = re.findall(r'(\$\(([a-zA-Z0-9\-_]+)\))', string_arg)
   for match in matches:
     to_replace, variable = match
     assert '$(' not in match, '$($(FOO)) variables not supported: ' + match
-    str = str.replace(to_replace, '${' + variable + '}')
+    string_arg = string_arg.replace(to_replace, '${' + variable + '}')
 
-  return str
+  return string_arg
 
 
 def ExpandEnvVars(string, expansions):
