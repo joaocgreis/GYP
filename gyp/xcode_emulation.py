@@ -15,85 +15,11 @@ import os.path
 import re
 import shlex
 
-from gyp.common import GypError, GetStdout, TopologicallySorted, EncodePOSIXShellList, CycleError
+from gyp.common import GypError, TopologicallySorted, EncodePOSIXShellList, CycleError, memoize
 import XCodeDetect
 
-# Populated lazily by XCodeDetect.Version, for efficiency, and to fix an issue when
-# "xcodebuild" is called too quickly (it has been found to return incorrect
-# version number).
-XCODE_VERSION_CACHE = None
 
-# Populated lazily by GetXcodeArchsDefault, to an |XcodeArchsDefault| instance
-# corresponding to the installed version of Xcode.
-XCODE_ARCHS_DEFAULT_CACHE = None
-
-
-def XcodeArchsVariableMapping(archs, archs_including_64_bit=None):
-  """Constructs a dictionary with expansion for $(ARCHS_STANDARD) variable,
-  and optionally for $(ARCHS_STANDARD_INCLUDING_64_BIT)."""
-  mapping = {'$(ARCHS_STANDARD)': archs}
-  if archs_including_64_bit:
-    mapping['$(ARCHS_STANDARD_INCLUDING_64_BIT)'] = archs_including_64_bit
-  return mapping
-
-
-class XcodeArchsDefault(object):
-  """A class to resolve ARCHS variable from xcode_settings, resolving Xcode
-  macros and implementing filtering by VALID_ARCHS. The expansion of macros
-  depends on the SDKROOT used ("macosx", "iphoneos", "iphonesimulator") and
-  on the version of Xcode.
-  """
-
-  # Match variable like $(ARCHS_STANDARD).
-  variable_pattern = re.compile(r'\$\([a-zA-Z_][a-zA-Z0-9_]*\)$')
-
-  def __init__(self, default, mac, iphonesimulator, iphoneos):
-    self._default = (default,)
-    self._archs = {'mac': mac, 'ios': iphoneos, 'iossim': iphonesimulator}
-
-  def _VariableMapping(self, sdkroot):
-    """Returns the dictionary of variable mapping depending on the SDKROOT."""
-    sdkroot = sdkroot.lower()
-    if 'iphoneos' in sdkroot:
-      return self._archs['ios']
-    elif 'iphonesimulator' in sdkroot:
-      return self._archs['iossim']
-    else:
-      return self._archs['mac']
-
-  def _ExpandArchs(self, archs, sdkroot):
-    """Expands variables references in ARCHS, and remove duplicates."""
-    variable_mapping = self._VariableMapping(sdkroot)
-    expanded_archs = []
-    for arch in archs:
-      if self.variable_pattern.match(arch):
-        variable = arch
-        try:
-          variable_expansion = variable_mapping[variable]
-          for arch2 in variable_expansion:
-            if arch2 not in expanded_archs:
-              expanded_archs.append(arch2)
-        except KeyError as e:
-          print('Warning: Ignoring unsupported variable "%s".' % variable)
-          print(e)
-      elif arch not in expanded_archs:
-        expanded_archs.append(arch)
-    return expanded_archs
-
-  def ActiveArchs(self, archs, valid_archs, sdkroot):
-    """Expands variables references in ARCHS, and filter by VALID_ARCHS if it
-    is defined (if not set, Xcode accept any value in ARCHS, otherwise, only
-    values present in VALID_ARCHS are kept)."""
-    expanded_archs = self._ExpandArchs(archs or self._default, sdkroot or '')
-    if valid_archs:
-      filtered_archs = []
-      for arch in expanded_archs:
-        if arch in valid_archs:
-          filtered_archs.append(arch)
-      expanded_archs = filtered_archs
-    return expanded_archs
-
-
+@memoize
 def GetXcodeArchsDefault():
   """Returns the |XcodeArchsDefault| object to use to expand ARCHS for the
   installed version of Xcode. The default values used by Xcode for ARCHS
@@ -114,9 +40,71 @@ def GetXcodeArchsDefault():
   All thoses rules are coded in the construction of the |XcodeArchsDefault|
   object to use depending on the version of Xcode detected. The object is
   for performance reason."""
-  global XCODE_ARCHS_DEFAULT_CACHE
-  if XCODE_ARCHS_DEFAULT_CACHE:
-    return XCODE_ARCHS_DEFAULT_CACHE
+
+  class XcodeArchsDefault(object):
+    """A class to resolve ARCHS variable from xcode_settings, resolving Xcode
+    macros and implementing filtering by VALID_ARCHS. The expansion of macros
+    depends on the SDKROOT used ("macosx", "iphoneos", "iphonesimulator") and
+    on the version of Xcode.
+    """
+
+    # Match variable like $(ARCHS_STANDARD).
+    variable_pattern = re.compile(r'\$\([a-zA-Z_][a-zA-Z0-9_]*\)$')
+
+    def __init__(self, default, mac, iphonesimulator, iphoneos):
+      self._default = (default,)
+      self._archs = {'mac': mac, 'ios': iphoneos, 'iossim': iphonesimulator}
+
+    def _VariableMapping(self, sdkroot):
+      """Returns the dictionary of variable mapping depending on the SDKROOT."""
+      sdkroot = sdkroot.lower()
+      if 'iphoneos' in sdkroot:
+        return self._archs['ios']
+      elif 'iphonesimulator' in sdkroot:
+        return self._archs['iossim']
+      else:
+        return self._archs['mac']
+
+    def _ExpandArchs(self, archs, sdkroot):
+      """Expands variables references in ARCHS, and remove duplicates."""
+      variable_mapping = self._VariableMapping(sdkroot)
+      expanded_archs = []
+      for arch in archs:
+        if self.variable_pattern.match(arch):
+          variable = arch
+          try:
+            variable_expansion = variable_mapping[variable]
+            for arch2 in variable_expansion:
+              if arch2 not in expanded_archs:
+                expanded_archs.append(arch2)
+          except KeyError as e:
+            print('Warning: Ignoring unsupported variable "%s".' % variable)
+            print(e)
+        elif arch not in expanded_archs:
+          expanded_archs.append(arch)
+      return expanded_archs
+
+    def ActiveArchs(self, archs, valid_archs, sdkroot):
+      """Expands variables references in ARCHS, and filter by VALID_ARCHS if it
+      is defined (if not set, Xcode accept any value in ARCHS, otherwise, only
+      values present in VALID_ARCHS are kept)."""
+      expanded_archs = self._ExpandArchs(archs or self._default, sdkroot or '')
+      if valid_archs:
+        filtered_archs = []
+        for arch in expanded_archs:
+          if arch in valid_archs:
+            filtered_archs.append(arch)
+        expanded_archs = filtered_archs
+      return expanded_archs
+
+  def XcodeArchsVariableMapping(archs, archs_including_64_bit=None):
+    """Constructs a dictionary with expansion for $(ARCHS_STANDARD) variable,
+    and optionally for $(ARCHS_STANDARD_INCLUDING_64_BIT)."""
+    mapping = {'$(ARCHS_STANDARD)': archs}
+    if archs_including_64_bit:
+      mapping['$(ARCHS_STANDARD_INCLUDING_64_BIT)'] = archs_including_64_bit
+    return mapping
+
   xcode_version = XCodeDetect.Version()
   if xcode_version < '0500':
     XCODE_ARCHS_DEFAULT_CACHE = XcodeArchsDefault(
@@ -175,46 +163,12 @@ def _MapLinkerFlagFilename(ldflag, gyp_to_build_path):
     regex = re.compile('(?:-Wl,)?' + '[ ,]'.join(flag_pattern))
     m = regex.match(ldflag)
     if m:
-      ldflag = ldflag[:m.start(1)] + gyp_to_build_path(m.group(1)) + \
-               ldflag[m.end(1):]
+      ldflag = ldflag[:m.start(1)] + gyp_to_build_path(m.group(1)) + ldflag[m.end(1):]
   # Required for ffmpeg (no idea why they don't use LIBRARY_SEARCH_PATHS,
   # TODO(thakis): Update ffmpeg.gyp):
   if ldflag.startswith('-L'):
     ldflag = '-L' + gyp_to_build_path(ldflag[len('-L'):])
   return ldflag
-
-
-def _BuildMachineOSBuild():
-  return GetStdout(['sw_vers', '-buildVersion'])
-
-
-def _DefaultSdkRoot():
-  """Returns the default SDKROOT to use.
-
-  Prior to version 5.0.0, if SDKROOT was not explicitly set in the Xcode
-  project, then the environment variable was empty. Starting with this
-  version, Xcode uses the name of the newest SDK installed.
-  """
-  xcode_version = XCodeDetect.Version()
-  if xcode_version < '0500':
-    return ''
-  default_sdk_path = XCodeDetect.GetSdkVersionInfoItem('', '--show-sdk-path')
-  default_sdk_root = XcodeSettings._sdk_root_cache.get(default_sdk_path)
-  if default_sdk_root:
-    return default_sdk_root
-  try:
-    all_sdks = GetStdout(['xcodebuild', '-showsdks'])
-  except:
-    # If xcodebuild fails, there will be no valid SDKs
-    return ''
-  for line in all_sdks.splitlines():
-    items = line.split()
-    if len(items) >= 3 and items[-2] == '-sdk':
-      sdk_root = items[-1]
-      sdk_path = XCodeDetect.GetSdkVersionInfoItem(sdk_root, '--show-sdk-path')
-      if sdk_path == default_sdk_path:
-        return sdk_root
-  return ''
 
 
 class XcodeSettings(object):
@@ -1175,7 +1129,7 @@ class XcodeSettings(object):
     if configname not in XcodeSettings._plist_cache:
       xcode = XCodeDetect.Version()
       cache = {
-        'BuildMachineOSBuild': _BuildMachineOSBuild(),
+        'BuildMachineOSBuild': XCodeDetect.BuildMachineOSBuild(),
         'DTXcode': xcode
       }
       compiler = self.xcode_settings[configname].get('GCC_VERSION')
@@ -1184,7 +1138,7 @@ class XcodeSettings(object):
 
       sdk_root = self._SdkRoot(configname)
       if not sdk_root:
-        sdk_root = _DefaultSdkRoot()
+        sdk_root = XCodeDetect.GetSdkVersionInfoItem('macosx', '--show-sdk-path')
       sdk_version = XCodeDetect.GetSdkVersionInfoItem(sdk_root, '--show-sdk-version')
       cache['DTSDKName'] = sdk_root + (sdk_version or '')
       if xcode >= '0720':
@@ -1320,30 +1274,6 @@ class MacPrefixHeader(object):
       (self._Gch('m', arch), '-x objective-c-header', 'm', self.header),
       (self._Gch('mm', arch), '-x objective-c++-header', 'mm', self.header),
     ]
-
-
-# This function ported from the logic in Homebrew's CLT version check
-def CLTVersion():
-  """Returns the version of command-line tools from pkgutil."""
-  # pkgutil output looks like
-  #   package-id: com.apple.pkg.CLTools_Executables
-  #   version: 5.0.1.0.1.1382131676
-  #   volume: /
-  #   location: /
-  #   install-time: 1382544035
-  #   groups: com.apple.FindSystemFiles.pkg-group com.apple.DevToolsBoth.pkg-group com.apple.DevToolsNonRelocatableShared.pkg-group
-  STANDALONE_PKG_ID = "com.apple.pkg.DeveloperToolsCLILeo"
-  FROM_XCODE_PKG_ID = "com.apple.pkg.DeveloperToolsCLI"
-  MAVERICKS_PKG_ID = "com.apple.pkg.CLTools_Executables"
-
-  regex = re.compile('version: (?P<version>.+)')
-  for key in [MAVERICKS_PKG_ID, STANDALONE_PKG_ID, FROM_XCODE_PKG_ID]:
-    # noinspection PyBroadException
-    try:
-      output = GetStdout(['/usr/sbin/pkgutil', '--pkg-info', key])
-      return re.search(regex, output).groupdict()['version']
-    except Exception:
-      pass
 
 
 def MergeGlobalXcodeSettingsToSpec(global_dict, spec):

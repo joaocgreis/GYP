@@ -1,9 +1,10 @@
 """Simplify access to Xcode information."""
-
+import re
 import subprocess
 from common import memoize
 
 
+@memoize
 def run(*cmd_args):
   return subprocess.check_output(cmd_args, stderr=subprocess.PIPE).decode('utf-8').strip()
 
@@ -13,7 +14,7 @@ def Version():
   version = ''
   try:
     lines = run('xcodebuild', '-version').splitlines()
-    version = ''.join(lines[0].decode('utf-8').split()[-1].split('.'))
+    version = ''.join(lines[0].split()[-1].split('.'))
     version = (version + '0' * (3 - len(version))).zfill(4)
   except subprocess.CalledProcessError:
     pass
@@ -73,3 +74,8 @@ def GetIOSCodeSignIdentityKey(identity):
   assert len(match_lines) == 1, ("Not exactly one codesigning fingerprints for identity: %s \n%s" % (identity, output))
   fingerprint = match_lines[0].split()[1]
   return fingerprint
+
+
+@memoize
+def BuildMachineOSBuild():
+  return run(['sw_vers', '-buildVersion'])
