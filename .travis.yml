@@ -42,10 +42,7 @@ matrix:
       os: osx
       osx_image: xcode10.2  # provides Python 3.7.2
       language: cpp  # 'language: python' is not yet supported on macOS
-      # before_install: brew upgrade python  # takes too long
       install:
-        - sudo rm -rf /Library/Developer/CommandLineTools
-        - xcode-select --install
         - HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja
         - pip3 install --upgrade pip pipenv
         - pipenv install --dev
