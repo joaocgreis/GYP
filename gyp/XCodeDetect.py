@@ -35,7 +35,7 @@ def GetSdkVersionInfoItem(sdk, item):
   # xcodebuild requires Xcode and can't run on Command Line Tools-only systems from 10.7 onward.
   # Since the CLT has no SDK paths anyway, returning None is the most sensible route and should still do the right thing.
   try:
-    return run(['xcrun', '--sdk', sdk, item])
+    return run('xcrun', '--sdk', sdk, item)
   except subprocess.CalledProcessError:
     return None
 
@@ -66,7 +66,7 @@ def IPhoneSDKPath():
 def GetIOSCodeSignIdentityKey(identity):
   if not identity:
     return None
-  output = run(['security', 'find-identity', '-p', 'codesigning', '-v'])
+  output = run('security', 'find-identity', '-p', 'codesigning', '-v')
   output_lines = output.splitlines()
   match_lines = [line for line in output_lines if identity in line]
   assert len(match_lines) == 1, ("Not exactly one codesigning fingerprints for identity: %s \n%s" % (identity, output))
@@ -76,4 +76,4 @@ def GetIOSCodeSignIdentityKey(identity):
 
 @memoize
 def BuildMachineOSBuild():
-  return run(['sw_vers', '-buildVersion'])
+  return run('sw_vers', '-buildVersion')
