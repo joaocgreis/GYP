@@ -1,10 +1,8 @@
 """Simplify access to Xcode information."""
-import re
 import subprocess
 from common import memoize
 
 
-@memoize
 def run(*cmd_args):
   return subprocess.check_output(cmd_args, stderr=subprocess.PIPE).decode('utf-8').strip()
 
